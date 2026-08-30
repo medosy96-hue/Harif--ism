@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getJSON, setJSON, setJSONIfAbsent, hsetJSON, hgetAllJSON } from '@/lib/redis';
