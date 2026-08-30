@@ -351,15 +351,16 @@ export default function HarfIsmGame() {
     if (!isHostRef.current) {
       pollId = setInterval(async () => {
         try {
-          const data = await apiGet(codeRef.current);
+          const data = await apiGet(codeRef.current, metaRef.current.roundNumber);
           if (cancelled) return;
+          if (data.summary) setRoundSummary(data.summary); // reflect host's live corrections
           if (data.meta && data.meta.status !== 'round_results') {
             setMetaBoth(data.meta);
             if (data.meta.status === 'letter_select') { resetRoundLocalState(); goto('letterSelect'); }
             else if (data.meta.status === 'final') goto('final');
           }
         } catch (e) {}
-      }, 1200);
+      }, 1500);
     }
     return () => { cancelled = true; if (pollId) clearInterval(pollId); };
   }, [view]);
@@ -377,6 +378,15 @@ export default function HarfIsmGame() {
       const data = await api('endGame', { code: codeRef.current, pid: pidRef.current });
       setMetaBoth(data.meta);
       goto('final');
+    } catch (e) { showToast('❌ ' + e.message); }
+  }
+  async function handleToggleAnswer(playerId, fieldKey, newCorrect) {
+    try {
+      const data = await api('reviewAnswer', {
+        code: codeRef.current, pid: pidRef.current, roundNumber: metaRef.current.roundNumber,
+        playerId, fieldKey, correct: newCorrect,
+      });
+      setRoundSummary(data.summary);
     } catch (e) { showToast('❌ ' + e.message); }
   }
 
@@ -415,6 +425,10 @@ export default function HarfIsmGame() {
             onStart={handleStartGame}
             onAddBot={handleAddBot}
             onCopyCode={() => copyText(code, (ok) => showToast(ok ? 'تم النسخ ✅' : 'انسخ يدويًا من النافذة'))}
+            onCopyLink={() => {
+              const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
+              copyText(url, (ok) => showToast(ok ? 'تم نسخ رابط الدعوة ✅' : 'انسخ يدويًا من النافذة'));
+            }}
           />
         )}
         {view === 'letterSelect' && meta && (
@@ -436,6 +450,7 @@ export default function HarfIsmGame() {
           <RoundResultsView
             summary={roundSummary} error={summaryError} isHost={isHost}
             onNewRound={handleNewRound} onEndGame={handleEndGame}
+            onToggleAnswer={handleToggleAnswer}
           />
         )}
         {view === 'final' && <FinalView scores={scores} onHome={goHome} />}
@@ -508,7 +523,7 @@ function HomeView({ prefillCode, joinCodeInput, setJoinCodeInput, onCreate, onJo
   );
 }
 
-function LobbyView({ code, meta, isHost, players, onDurationChange, onStart, onAddBot, onCopyCode }) {
+function LobbyView({ code, meta, isHost, players, onDurationChange, onStart, onAddBot, onCopyCode, onCopyLink }) {
   const [duration, setDuration] = useState(Math.round((meta.roundDuration || 240) / 60));
   const entries = Object.entries(players || {});
   const botCount = entries.filter(([, p]) => p.isBot).length;
@@ -521,8 +536,9 @@ function LobbyView({ code, meta, isHost, players, onDurationChange, onStart, onA
         <div className="code-badge">{code}</div>
         <div className="copy-row" style={{ marginTop: 12 }}>
           <button className="btn btn-outline" onClick={onCopyCode}>📋 نسخ الكود</button>
+          <button className="btn btn-outline" onClick={onCopyLink}>🔗 نسخ رابط الدعوة</button>
         </div>
-        <p className="muted center" style={{ marginTop: 10, fontSize: 12.5 }}>اطلب من أصحابك فتح الموقع والضغط على "الانضمام لعبة" ثم إدخال هالكود</p>
+        <p className="muted center" style={{ marginTop: 10, fontSize: 12.5 }}>شارك الكود أو الرابط مع أصحابك للانضمام مباشرة</p>
       </div>
 
       <div className="card">
@@ -578,6 +594,7 @@ function LobbyView({ code, meta, isHost, players, onDurationChange, onStart, onA
 
 function LetterSelectView({ isHost, meta, onChoose }) {
   const [waitLetter, setWaitLetter] = useState(ARABIC_LETTERS[0]);
+  const usedLetters = meta.usedLetters || [];
   useEffect(() => {
     if (isHost) return;
     let i = 0;
@@ -591,12 +608,24 @@ function LetterSelectView({ isHost, meta, onChoose }) {
         <div className="card center">
           <h3 style={{ fontSize: 16, marginBottom: 4 }}>اختر حرف الجولة {meta.roundNumber}</h3>
           <p className="muted">بمجرد اختيارك، تبدأ الجولة فورًا لجميع اللاعبين</p>
+          {usedLetters.length > 0 && <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>الحروف المستخدمة سابقًا معطّلة (رمادية)</p>}
         </div>
         <div className="card">
           <div className="letter-grid">
-            {ARABIC_LETTERS.map((l) => (
-              <button key={l} className="letter-tile" onClick={() => onChoose(l)}>{l}</button>
-            ))}
+            {ARABIC_LETTERS.map((l) => {
+              const used = usedLetters.includes(l);
+              return (
+                <button
+                  key={l}
+                  className="letter-tile"
+                  disabled={used}
+                  style={used ? { background: 'var(--line)', color: 'var(--ink-soft)', boxShadow: 'none', cursor: 'not-allowed' } : undefined}
+                  onClick={() => !used && onChoose(l)}
+                >
+                  {l}
+                </button>
+              );
+            })}
           </div>
         </div>
       </>
@@ -647,7 +676,7 @@ function PlayingView({ letter, remainingMs, roundDurationMs, answers, onChange, 
   );
 }
 
-function RoundResultsView({ summary, error, isHost, onNewRound, onEndGame }) {
+function RoundResultsView({ summary, error, isHost, onNewRound, onEndGame, onToggleAnswer }) {
   if (error) return <div className="card center"><p className="muted">تعذّر تحميل النتائج، حاول مجددًا لاحقًا.</p></div>;
   if (!summary) return <div className="card center"><p className="muted">جاري تحميل النتائج...</p></div>;
 
@@ -658,6 +687,7 @@ function RoundResultsView({ summary, error, isHost, onNewRound, onEndGame }) {
         <p className="muted">نتائج الجولة {summary.roundNumber} — الحرف</p>
         <div className="big-letter-tile" style={{ width: 64, height: 64, margin: '8px auto' }}><span style={{ fontSize: 28 }}>{summary.letter}</span></div>
         {summary.winnerName && <p style={{ fontWeight: 700, color: 'var(--green-deep)' }}>🏁 {summary.winnerName} أنهى الجولة أولاً</p>}
+        {isHost && <p className="muted" style={{ marginTop: 8, fontSize: 12.5 }}>دوس على أي كلمة لتصحيحها إذا كانت محتسبة غلط ✏️</p>}
       </div>
       <div className="card">
         {rows.map(([pidKey, p], idx) => {
@@ -672,7 +702,21 @@ function RoundResultsView({ summary, error, isHost, onNewRound, onEndGame }) {
               <div className="answers-mini">
                 {FIELD_DEFS.map((f) => {
                   const val = p.answers[f.key] && p.answers[f.key].trim() ? p.answers[f.key] : '—';
-                  return <span key={f.key} className={`ans-chip ${p.flags[f.key] ? 'ok' : 'bad'}`}>{f.icon} {val}</span>;
+                  const ok = p.flags[f.key];
+                  if (isHost) {
+                    return (
+                      <button
+                        key={f.key}
+                        className={`ans-chip ${ok ? 'ok' : 'bad'}`}
+                        style={{ border: 'none', cursor: 'pointer' }}
+                        onClick={() => onToggleAnswer(pidKey, f.key, !ok)}
+                        title="دوس للتبديل بين صح/غلط"
+                      >
+                        {f.icon} {val} {ok ? '✓' : '✕'}
+                      </button>
+                    );
+                  }
+                  return <span key={f.key} className={`ans-chip ${ok ? 'ok' : 'bad'}`}>{f.icon} {val}</span>;
                 })}
               </div>
             </div>
@@ -787,7 +831,7 @@ function Modal({ modal, busy, onClose, onCreate, onJoin }) {
               <h3>⏱️ مدة الجولة</h3>
               <p>يختار المضيف مدة كل جولة من غرفة الانتظار، بين 3 و10 دقائق، قبل بدء اللعب.</p>
               <h3>🔤 اختيار الحرف</h3>
-              <p>عند بدء كل جولة، يختار المضيف حرفًا من الأبجدية العربية، فتظهر خانات التعبئة الخمس لجميع اللاعبين في الوقت نفسه.</p>
+              <p>عند بدء كل جولة، يختار المضيف حرفًا من الأبجدية العربية (لا يمكن اختيار نفس الحرف مرتين بنفس اللعبة)، فتظهر خانات التعبئة الخمس لجميع اللاعبين في الوقت نفسه.</p>
               <h3>✍️ سير الجولة</h3>
               <ol>
                 <li>يملأ كل لاعب الخانات الخمس بكلمات تبدأ بالحرف المختار.</li>
@@ -796,8 +840,9 @@ function Modal({ modal, busy, onClose, onCreate, onJoin }) {
               </ol>
               <h3>🧮 احتساب النقاط</h3>
               <ul>
-                <li>كل كلمة صحيحة (غير فارغة وتبدأ فعلًا بالحرف المطلوب) = 10 نقاط.</li>
+                <li>كل كلمة صحيحة (غير فارغة وتبدأ فعلًا بالحرف المطلوب) = 10 نقاط تلقائيًا.</li>
                 <li>الكلمة الفارغة أو التي لا تبدأ بالحرف الصحيح = صفر نقاط.</li>
+                <li>يقدر المضيف يراجع أي كلمة بشاشة النتائج ويصححها يدويًا (مثلًا إذا كانت كلمة غير موجودة فعلًا بتلك الفئة).</li>
                 <li>تُجمع نقاط كل لاعب من جميع الجولات لتكوين مجموعه الكلي.</li>
               </ul>
               <h3>🏁 نهاية اللعبة</h3>

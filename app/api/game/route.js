@@ -1,5 +1,3 @@
-/* eslint-disable no-unused-vars */
-
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getJSON, setJSON, setJSONIfAbsent, hsetJSON, hgetAllJSON } from '@/lib/redis';
@@ -66,6 +64,7 @@ export async function POST(request) {
       case 'chooseLetter': return await handleChooseLetter(body);
       case 'submit': return await handleSubmit(body);
       case 'computeSummary': return await handleComputeSummary(body);
+      case 'reviewAnswer': return await handleReviewAnswer(body);
       case 'nextRound': return await handleNextRound(body);
       case 'endGame': return await handleEndGame(body);
       default: return err(400, 'نوع طلب غير معروف');
@@ -91,7 +90,8 @@ async function handleCreate({ name }) {
   const pid = randomUUID();
   const meta = {
     hostId: pid, hostName: cleanName, status: 'lobby',
-    roundDuration: 240, currentLetter: null, roundNumber: 0, createdAt: Date.now()
+    roundDuration: 240, currentLetter: null, roundNumber: 0, createdAt: Date.now(),
+    usedLetters: []
   };
   await setJSON(metaKey(code), meta, ROOM_TTL_SECONDS);
   await hsetJSON(playersKey(code), pid, { name: cleanName, joinedAt: Date.now() }, ROOM_TTL_SECONDS);
@@ -150,10 +150,12 @@ async function handleChooseLetter({ code, pid, letter }) {
   const meta = await getJSON(metaKey(code));
   if (!meta) return err(404, 'لم يتم العثور على الغرفة');
   if (meta.hostId !== pid) return err(403, 'فقط المضيف يقدر يختار الحرف');
+  if ((meta.usedLetters || []).includes(letter)) return err(400, 'هذا الحرف مستخدم بالفعل بهذه اللعبة، اختر حرفًا آخر');
 
   meta.currentLetter = letter;
   meta.status = 'playing';
   meta.roundStartTime = Date.now();
+  meta.usedLetters = [...(meta.usedLetters || []), letter];
   await setJSON(metaKey(code), meta, ROOM_TTL_SECONDS);
 
   return NextResponse.json({ meta });
@@ -187,6 +189,17 @@ async function handleComputeSummary({ code, pid, roundNumber }) {
 
   const existing = await getJSON(summaryKey(code, roundNumber));
   if (existing) return NextResponse.json({ summary: existing, alreadyComputed: true });
+
+  // Atomic lock so two near-simultaneous triggers (e.g. the finish click and the
+  // background poller both noticing the round ended) can never both score the round.
+  const lockKey = `room:${code}:round:${roundNumber}:computelock`;
+  const gotLock = await setJSONIfAbsent(lockKey, { by: pid, time: Date.now() }, ROOM_TTL_SECONDS);
+  if (!gotLock) {
+    await new Promise((r) => setTimeout(r, 500));
+    const summaryNow = await getJSON(summaryKey(code, roundNumber));
+    if (summaryNow) return NextResponse.json({ summary: summaryNow, alreadyComputed: true });
+    return err(409, 'جاري احتساب النتائج، حاول خلال لحظات');
+  }
 
   const players = await hgetAllJSON(playersKey(code));
   const answers = await hgetAllJSON(answersKey(code, roundNumber));
@@ -223,6 +236,34 @@ async function handleComputeSummary({ code, pid, roundNumber }) {
 
   meta.status = 'round_results';
   await setJSON(metaKey(code), meta, ROOM_TTL_SECONDS);
+
+  return NextResponse.json({ summary });
+}
+
+async function handleReviewAnswer({ code, pid, roundNumber, playerId, fieldKey, correct }) {
+  const meta = await getJSON(metaKey(code));
+  if (!meta) return err(404, 'لم يتم العثور على الغرفة');
+  if (meta.hostId !== pid) return err(403, 'فقط المضيف يقدر يعدّل النتائج');
+
+  const summary = await getJSON(summaryKey(code, roundNumber));
+  if (!summary) return err(404, 'لم يتم احتساب النتائج بعد');
+  const player = summary.perPlayer[playerId];
+  if (!player) return err(404, 'لاعب غير موجود بهذه الجولة');
+
+  const wasCorrect = !!player.flags[fieldKey];
+  const nowCorrect = !!correct;
+  if (wasCorrect === nowCorrect) return NextResponse.json({ summary });
+
+  const delta = nowCorrect ? 10 : -10;
+  player.flags[fieldKey] = nowCorrect;
+  player.points += delta;
+  summary.perPlayer[playerId] = player;
+  await setJSON(summaryKey(code, roundNumber), summary, ROOM_TTL_SECONDS);
+
+  const scores = await hgetAllJSON(scoresKey(code));
+  const prev = scores[playerId] || { name: player.name, total: 0 };
+  const updatedScore = { name: prev.name, total: (prev.total || 0) + delta };
+  await hsetJSON(scoresKey(code), playerId, updatedScore, ROOM_TTL_SECONDS);
 
   return NextResponse.json({ summary });
 }
