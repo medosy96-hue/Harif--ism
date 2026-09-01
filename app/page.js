@@ -498,10 +498,8 @@ function Header() {
 function GamePromoCard({ href }) {
   return (
     <a className="game-promo" href={href} target="_blank" rel="noopener noreferrer">
-      <div className="gp-icon">؟</div>
-      <div className="gp-title">ج جواب <span className="star">★★★</span></div>
-      <div className="gp-tagline">اسأل • جاوب • نافس</div>
-      <div className="gp-desc">20 سؤالًا متنوعًا • حتى 20 لاعبًا • 10 نقاط لكل إجابة صحيحة</div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/jeem-jawab-preview.png" alt="ج جواب — لعبة أسئلة جماعية" className="gp-image" />
       <div className="gp-cta">جرّب لعبة ج جواب ←</div>
     </a>
   );
