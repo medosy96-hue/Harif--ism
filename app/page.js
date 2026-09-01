@@ -7,7 +7,7 @@ const SESSION_KEY = 'harfIsmSession';
 const EMPTY_ANSWERS = { ism: '', hayawan: '', nabat: '', jamad: '', balad: '' };
 
 // Jeem Jawab — the sibling game
-const JEEM_JAWAB_URL = 'https://jeem-jawab-git-main-dirki.vercel.app/';
+const JEEM_JAWAB_URL = 'https://jeem-jawab.vercel.app/';
 
 /* ---------------- storage / api helpers ---------------- */
 function saveSession(data) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch (e) {} }
@@ -498,8 +498,10 @@ function Header() {
 function GamePromoCard({ href }) {
   return (
     <a className="game-promo" href={href} target="_blank" rel="noopener noreferrer">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/jeem-jawab-preview.png" alt="ج جواب — لعبة أسئلة جماعية" className="gp-image" />
+      <div className="gp-icon">؟</div>
+      <div className="gp-title">ج جواب <span className="star">★★★</span></div>
+      <div className="gp-tagline">اسأل • جاوب • نافس</div>
+      <div className="gp-desc">20 سؤالًا متنوعًا • حتى 20 لاعبًا • 10 نقاط لكل إجابة صحيحة</div>
       <div className="gp-cta">جرّب لعبة ج جواب ←</div>
     </a>
   );
