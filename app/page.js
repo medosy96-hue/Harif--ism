@@ -533,7 +533,7 @@ function HomeView({ prefillCode, joinCodeInput, setJoinCodeInput, onCreate, onJo
         </div>
 
         <GamePromoCard href={JEEM_JAWAB_URL} />
-
+        <GamePromoCard href={JEEM_JAWAB_URL} />
         <button className="btn btn-ghost" onClick={onRules}>📜 قوانين اللعبة</button>
       </div>
       <footer className="tiny muted">حرف اسم — لعبة جماعية أونلاين حتى 20 لاعبًا</footer>
