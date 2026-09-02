@@ -506,6 +506,14 @@ function GamePromoCard({ href }) {
     </a>
   );
 }
+function GamePromoCard({ href }) {
+  return (
+    <a className="game-promo" href={href} target="_blank" rel="noopener noreferrer">
+      <img src="/jeem-jawab-preview.png" alt="ج جواب" className="gp-image" />
+      <div className="gp-cta">جرّب لعبة ج جواب ←</div>
+    </a>
+  );
+}
 
 function HomeView({ prefillCode, joinCodeInput, setJoinCodeInput, onCreate, onJoin, onRules }) {
   return (
