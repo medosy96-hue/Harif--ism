@@ -7,7 +7,7 @@ const SESSION_KEY = 'harfIsmSession';
 const EMPTY_ANSWERS = { ism: '', hayawan: '', nabat: '', jamad: '', balad: '' };
 
 // Jeem Jawab — the sibling game
-const JEEM_JAWAB_URL = 'https://jeem-jawab.vercel.app/';
+const JEEM_JAWAB_URL = 'https://jeem-jawab-git-main-dirki.vercel.app/';
 
 /* ---------------- storage / api helpers ---------------- */
 function saveSession(data) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch (e) {} }
@@ -226,16 +226,19 @@ export default function HarfIsmGame() {
 
   /* ================= LETTER SELECT ================= */
   useEffect(() => {
-    if (view !== 'letterSelect' || isHostRef.current) return;
+    if (view !== 'letterSelect') return;
     let cancelled = false;
     const id = setInterval(async () => {
       try {
         const data = await apiGet(codeRef.current);
         if (cancelled) return;
-        if (data.meta && data.meta.status === 'playing') {
+        if (data.meta) {
           setMetaBoth(data.meta);
-          resetRoundLocalState();
-          goto('playing');
+          setPlayers(data.players || {});
+          if (data.meta.status === 'playing') {
+            resetRoundLocalState();
+            goto('playing');
+          }
         }
       } catch (e) {}
     }, 1200);
@@ -250,6 +253,31 @@ export default function HarfIsmGame() {
       goto('playing');
     } catch (e) { showToast('❌ ' + e.message); }
   }
+
+  // Host-only: if it's a bot's turn to pick a letter, auto-pick one on its behalf after a short delay.
+  useEffect(() => {
+    if (view !== 'letterSelect' || !isHost || !meta || !meta.turnOrder || meta.turnOrder.length === 0) return;
+    const currentPid = meta.turnOrder[meta.currentTurnIndex];
+    const currentPlayer = players[currentPid];
+    if (!currentPlayer || !currentPlayer.isBot) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      const remaining = ARABIC_LETTERS.filter((l) => !(meta.usedLetters || []).includes(l));
+      if (remaining.length === 0) return;
+      const letter = remaining[Math.floor(Math.random() * remaining.length)];
+      try {
+        const data = await api('chooseLetter', { code: codeRef.current, pid: pidRef.current, letter });
+        if (cancelled) return;
+        setMetaBoth(data.meta);
+        resetRoundLocalState();
+        goto('playing');
+      } catch (e) { /* if it fails, the periodic poll will retry naturally on next tick */ }
+    }, 1400);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, isHost, meta && meta.currentTurnIndex, meta && meta.roundNumber]);
 
   /* ================= PLAYING ================= */
   async function doSubmit(reason, tryClaim) {
@@ -316,7 +344,7 @@ export default function HarfIsmGame() {
           }
         }
       } catch (e) {}
-    }, 1200);
+    }, 800);
 
     return () => { cancelled = true; clearInterval(clockId); clearInterval(pollId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -435,7 +463,7 @@ export default function HarfIsmGame() {
           />
         )}
         {view === 'letterSelect' && meta && (
-          <LetterSelectView isHost={isHost} meta={meta} onChoose={handleChooseLetter} />
+          <LetterSelectView isHost={isHost} meta={meta} players={players} myPid={pid} onChoose={handleChooseLetter} />
         )}
         {view === 'playing' && meta && (
           <PlayingView
@@ -498,18 +526,8 @@ function Header() {
 function GamePromoCard({ href }) {
   return (
     <a className="game-promo" href={href} target="_blank" rel="noopener noreferrer">
-      <div className="gp-icon">؟</div>
-      <div className="gp-title">ج جواب <span className="star">★★★</span></div>
-      <div className="gp-tagline">اسأل • جاوب • نافس</div>
-      <div className="gp-desc">20 سؤالًا متنوعًا • حتى 20 لاعبًا • 10 نقاط لكل إجابة صحيحة</div>
-      <div className="gp-cta">جرّب لعبة ج جواب ←</div>
-    </a>
-  );
-}
-function GamePromoCard({ href }) {
-  return (
-    <a className="game-promo" href={href} target="_blank" rel="noopener noreferrer">
-      <img src="/jeem-jawab-preview.png" alt="ج جواب" className="gp-image" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/jeem-jawab-preview.png" alt="ج جواب — لعبة أسئلة جماعية" className="gp-image" />
       <div className="gp-cta">جرّب لعبة ج جواب ←</div>
     </a>
   );
@@ -541,7 +559,7 @@ function HomeView({ prefillCode, joinCodeInput, setJoinCodeInput, onCreate, onJo
         </div>
 
         <GamePromoCard href={JEEM_JAWAB_URL} />
-        <GamePromoCard href={JEEM_JAWAB_URL} />
+
         <button className="btn btn-ghost" onClick={onRules}>📜 قوانين اللعبة</button>
       </div>
       <footer className="tiny muted">حرف اسم — لعبة جماعية أونلاين حتى 20 لاعبًا</footer>
@@ -618,21 +636,26 @@ function LobbyView({ code, meta, isHost, players, onDurationChange, onStart, onA
   );
 }
 
-function LetterSelectView({ isHost, meta, onChoose }) {
+function LetterSelectView({ isHost, meta, players, myPid, onChoose }) {
   const [waitLetter, setWaitLetter] = useState(ARABIC_LETTERS[0]);
   const usedLetters = meta.usedLetters || [];
+  const currentPid = (meta.turnOrder || [])[meta.currentTurnIndex];
+  const currentPlayer = players[currentPid];
+  const isMyTurn = currentPid === myPid;
+  const isBotTurn = currentPlayer && currentPlayer.isBot;
+
   useEffect(() => {
-    if (isHost) return;
+    if (isMyTurn) return;
     let i = 0;
     const id = setInterval(() => { i++; setWaitLetter(ARABIC_LETTERS[i % ARABIC_LETTERS.length]); }, 450);
     return () => clearInterval(id);
-  }, [isHost]);
+  }, [isMyTurn]);
 
-  if (isHost) {
+  if (isMyTurn) {
     return (
       <>
         <div className="card center">
-          <h3 style={{ fontSize: 16, marginBottom: 4 }}>اختر حرف الجولة {meta.roundNumber}</h3>
+          <h3 style={{ fontSize: 16, marginBottom: 4 }}>دورك تختار حرف الجولة {meta.roundNumber}</h3>
           <p className="muted">بمجرد اختيارك، تبدأ الجولة فورًا لجميع اللاعبين</p>
           {usedLetters.length > 0 && <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>الحروف المستخدمة سابقًا معطّلة (رمادية)</p>}
         </div>
@@ -657,10 +680,13 @@ function LetterSelectView({ isHost, meta, onChoose }) {
       </>
     );
   }
+
   return (
     <div className="card center">
       <div className="big-letter-tile pulse"><span>{waitLetter}</span></div>
-      <p style={{ fontWeight: 700 }}>المضيف يختار الحرف الآن...</p>
+      <p style={{ fontWeight: 700 }}>
+        {isBotTurn ? `🤖 ${currentPlayer.name} يختار الحرف الآن...` : `${currentPlayer ? currentPlayer.name : '...'} يختار الحرف الآن`}
+      </p>
       <p className="muted">استعد لكتابة اسم، حيوان، نبات، جماد، وبلاد!</p>
     </div>
   );
@@ -857,7 +883,7 @@ function Modal({ modal, busy, onClose, onCreate, onJoin }) {
               <h3>⏱️ مدة الجولة</h3>
               <p>يختار المضيف مدة كل جولة من غرفة الانتظار، بين 3 و10 دقائق، قبل بدء اللعب.</p>
               <h3>🔤 اختيار الحرف</h3>
-              <p>عند بدء كل جولة، يختار المضيف حرفًا من الأبجدية العربية (لا يمكن اختيار نفس الحرف مرتين بنفس اللعبة)، فتظهر خانات التعبئة الخمس لجميع اللاعبين في الوقت نفسه.</p>
+              <p>الدور يدور على اللاعبين الحقيقيين بالترتيب (المضيف أولًا، ثم كل من انضم حسب ترتيب دخوله)، وإذا كان الدور على لاعب تجريبي (بوت) فهو يختار حرفًا عشوائيًا تلقائيًا. لا يمكن اختيار نفس الحرف مرتين بنفس اللعبة.</p>
               <h3>✍️ سير الجولة</h3>
               <ol>
                 <li>يملأ كل لاعب الخانات الخمس بكلمات تبدأ بالحرف المختار.</li>
