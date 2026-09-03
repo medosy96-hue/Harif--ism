@@ -4,7 +4,7 @@ import { getJSON, setJSON, setJSONIfAbsent, hsetJSON, hgetAllJSON } from '@/lib/
 import { FIELD_DEFS, ROOM_TTL_SECONDS, MAX_PLAYERS, MAX_BOTS } from '@/lib/constants';
 import { isCorrect } from '@/lib/scoring';
 
-export const dynamic = 'force-dynamic'; // never cache — this is polled live game state
+export const dynamic = 'force-dynamic';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function genCode(len = 5) {
@@ -23,6 +23,14 @@ function scoresKey(code) { return `room:${code}:scores`; }
 function answersKey(code, n) { return `room:${code}:round:${n}:answers`; }
 function winnerKey(code, n) { return `room:${code}:round:${n}:winner`; }
 function summaryKey(code, n) { return `room:${code}:round:${n}:summary`; }
+
+// Build the turn order: host first, then others sorted by joinedAt
+function buildTurnOrder(players, hostId) {
+  const entries = Object.entries(players).sort((a, b) => a[1].joinedAt - b[1].joinedAt);
+  const host = entries.find(([id]) => id === hostId);
+  const rest = entries.filter(([id]) => id !== hostId);
+  return [...(host ? [host[0]] : []), ...rest.map(([id]) => id)];
+}
 
 export async function GET(request) {
   try {
@@ -91,7 +99,9 @@ async function handleCreate({ name }) {
   const meta = {
     hostId: pid, hostName: cleanName, status: 'lobby',
     roundDuration: 240, currentLetter: null, roundNumber: 0, createdAt: Date.now(),
-    usedLetters: []
+    usedLetters: [],
+    turnOrder: [],      // filled when game starts
+    currentTurnIndex: 0 // whose turn it is to pick the letter
   };
   await setJSON(metaKey(code), meta, ROOM_TTL_SECONDS);
   await hsetJSON(playersKey(code), pid, { name: cleanName, joinedAt: Date.now() }, ROOM_TTL_SECONDS);
@@ -138,8 +148,14 @@ async function handleStart({ code, pid, roundDuration }) {
   if (!meta) return err(404, 'لم يتم العثور على الغرفة');
   if (meta.hostId !== pid) return err(403, 'فقط المضيف يقدر يبدأ اللعبة');
 
+  const players = await hgetAllJSON(playersKey(code));
+  const turnOrder = buildTurnOrder(players, meta.hostId);
+
   meta.status = 'letter_select';
   meta.roundNumber = (meta.roundNumber || 0) + 1;
+  meta.turnOrder = turnOrder;
+  // currentTurnIndex advances each round: round 1 → index 0, round 2 → index 1, etc.
+  meta.currentTurnIndex = (meta.roundNumber - 1) % turnOrder.length;
   if (roundDuration) meta.roundDuration = roundDuration;
   await setJSON(metaKey(code), meta, ROOM_TTL_SECONDS);
 
@@ -149,7 +165,16 @@ async function handleStart({ code, pid, roundDuration }) {
 async function handleChooseLetter({ code, pid, letter }) {
   const meta = await getJSON(metaKey(code));
   if (!meta) return err(404, 'لم يتم العثور على الغرفة');
-  if (meta.hostId !== pid) return err(403, 'فقط المضيف يقدر يختار الحرف');
+
+  const players = await hgetAllJSON(playersKey(code));
+  const expectedPid = meta.turnOrder[meta.currentTurnIndex];
+  const isExpectedBot = players[expectedPid] && players[expectedPid].isBot;
+  const isHostActingForBot = isExpectedBot && pid === meta.hostId;
+
+  if (pid !== expectedPid && !isHostActingForBot) {
+    const chooserName = (players[expectedPid] && players[expectedPid].name) || '؟';
+    return err(403, `ليس دورك لاختيار الحرف، دور ${chooserName}`);
+  }
   if ((meta.usedLetters || []).includes(letter)) return err(400, 'هذا الحرف مستخدم بالفعل بهذه اللعبة، اختر حرفًا آخر');
 
   meta.currentLetter = letter;
@@ -190,8 +215,6 @@ async function handleComputeSummary({ code, pid, roundNumber }) {
   const existing = await getJSON(summaryKey(code, roundNumber));
   if (existing) return NextResponse.json({ summary: existing, alreadyComputed: true });
 
-  // Atomic lock so two near-simultaneous triggers (e.g. the finish click and the
-  // background poller both noticing the round ended) can never both score the round.
   const lockKey = `room:${code}:round:${roundNumber}:computelock`;
   const gotLock = await setJSONIfAbsent(lockKey, { by: pid, time: Date.now() }, ROOM_TTL_SECONDS);
   if (!gotLock) {
@@ -201,6 +224,10 @@ async function handleComputeSummary({ code, pid, roundNumber }) {
     return err(409, 'جاري احتساب النتائج، حاول خلال لحظات');
   }
 
+  // Grace period: give other players' clients time to notice the round ended and
+  // submit whatever they'd typed so far (even partial answers) before we snapshot scores.
+  await new Promise((r) => setTimeout(r, 1800));
+
   const players = await hgetAllJSON(playersKey(code));
   const answers = await hgetAllJSON(answersKey(code, roundNumber));
   const winner = await getJSON(winnerKey(code, roundNumber));
@@ -209,6 +236,7 @@ async function handleComputeSummary({ code, pid, roundNumber }) {
 
   const perPlayer = {};
   for (const [playerId, p] of Object.entries(players)) {
+    // Include ALL players even if they didn't submit (empty answers = 0 pts)
     const ans = answers[playerId] || { ism: '', hayawan: '', nabat: '', jamad: '', balad: '' };
     let pts = 0;
     const flags = {};
@@ -275,6 +303,8 @@ async function handleNextRound({ code, pid }) {
 
   meta.status = 'letter_select';
   meta.roundNumber = (meta.roundNumber || 0) + 1;
+  // Advance turn to next player
+  meta.currentTurnIndex = (meta.roundNumber - 1) % (meta.turnOrder || [meta.hostId]).length;
   await setJSON(metaKey(code), meta, ROOM_TTL_SECONDS);
 
   return NextResponse.json({ meta });
