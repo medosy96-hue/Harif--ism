@@ -150,6 +150,11 @@ export default function HarfIsmGame() {
     setMetaBoth(null); setRosterBoth([]); setPlayers({}); setScores({});
     goto('home');
   }
+  function handleExitClick() {
+    if (window.confirm('متأكد إنك بدك تطلع من اللعبة؟ رح تفقد مكانك بالغرفة الحالية.')) {
+      goHome();
+    }
+  }
 
   /* ================= HOME / CREATE / JOIN ================= */
   async function handleCreateConfirm(name) {
@@ -436,8 +441,13 @@ export default function HarfIsmGame() {
   return (
     <>
       <div id="flag-rule"><span className="s1"></span><span className="s2"></span><span className="s3"></span></div>
-      <div id="app-root">
+        <div id="app-root">
+        {view !== 'home' && view !== 'boot' && (
+          <button className="exit-btn" onClick={handleExitClick} title="العودة للرئيسية">✕</button>
+        )}
         <Header />
+
+        
         {view === 'boot' && <div className="card center"><p className="muted">جاري التحميل...</p></div>}
         {view === 'home' && (
           <HomeView
