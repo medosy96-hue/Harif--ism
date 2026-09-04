@@ -6,9 +6,6 @@ import { ARABIC_LETTERS, FIELD_DEFS } from '@/lib/constants';
 const SESSION_KEY = 'harfIsmSession';
 const EMPTY_ANSWERS = { ism: '', hayawan: '', nabat: '', jamad: '', balad: '' };
 
-// Jeem Jawab — the sibling game
-const JEEM_JAWAB_URL = 'https://jeem-jawab-git-main-dirki.vercel.app/';
-
 /* ---------------- storage / api helpers ---------------- */
 function saveSession(data) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch (e) {} }
 function loadSession() { try { const raw = localStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
@@ -40,7 +37,7 @@ function fmtTime(ms) {
 function initials(name) { return (name || '؟').trim().slice(0, 1); }
 async function copyText(text, onDone) {
   try { await navigator.clipboard.writeText(text); onDone && onDone(true); }
-  catch (e) { window.prompt('انسخ يدويًا:', text); onDone && onDone(false); }
+  catch (e) { window.prompt('انسخ يدويا:', text); onDone && onDone(false); }
 }
 
 /* ================= MAIN APP ================= */
@@ -150,6 +147,7 @@ export default function HarfIsmGame() {
     setMetaBoth(null); setRosterBoth([]); setPlayers({}); setScores({});
     goto('home');
   }
+
   function handleExitClick() {
     if (window.confirm('متأكد إنك بدك تطلع من اللعبة؟ رح تفقد مكانك بالغرفة الحالية.')) {
       goHome();
@@ -441,13 +439,11 @@ export default function HarfIsmGame() {
   return (
     <>
       <div id="flag-rule"><span className="s1"></span><span className="s2"></span><span className="s3"></span></div>
-        <div id="app-root">
+      <div id="app-root">
         {view !== 'home' && view !== 'boot' && (
           <button className="exit-btn" onClick={handleExitClick} title="العودة للرئيسية">✕</button>
         )}
         <Header />
-
-        
         {view === 'boot' && <div className="card center"><p className="muted">جاري التحميل...</p></div>}
         {view === 'home' && (
           <HomeView
@@ -465,7 +461,7 @@ export default function HarfIsmGame() {
             onDurationChange={(sec) => { const m = { ...metaRef.current, roundDuration: sec }; setMetaBoth(m); }}
             onStart={handleStartGame}
             onAddBot={handleAddBot}
-            onCopyCode={() => copyText(code, (ok) => showToast(ok ? 'تم النسخ ✅' : 'انسخ يدويًا من النافذة'))}
+            onCopyCode={() => copyText(code, (ok) => showToast(ok ? 'تم النسخ ✅' : 'انسخ يدويا من النافذة'))}
             onCopyLink={() => {
               const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
               copyText(url, (ok) => showToast(ok ? 'تم نسخ رابط الدعوة ✅' : 'انسخ يدويًا من النافذة'));
@@ -533,11 +529,6 @@ function Header() {
   );
 }
 
-function GamePromoCard({ href }) {
-  return (
-    <a className="game-promo" href={href} target="_blank" rel="noopener noreferrer">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-   
 function HomeView({ prefillCode, joinCodeInput, setJoinCodeInput, onCreate, onJoin, onRules }) {
   return (
     <>
@@ -562,8 +553,6 @@ function HomeView({ prefillCode, joinCodeInput, setJoinCodeInput, onCreate, onJo
             <button className="btn btn-outline" onClick={() => { if (!joinCodeInput.trim()) return; onJoin(joinCodeInput); }}>↩️ انضمام للعبة</button>
           </div>
         </div>
-
-        <GamePromoCard href={JEEM_JAWAB_URL} />
 
         <button className="btn btn-ghost" onClick={onRules}>📜 قوانين اللعبة</button>
       </div>
@@ -888,7 +877,7 @@ function Modal({ modal, busy, onClose, onCreate, onJoin }) {
               <h3>⏱️ مدة الجولة</h3>
               <p>يختار المضيف مدة كل جولة من غرفة الانتظار، بين 3 و10 دقائق، قبل بدء اللعب.</p>
               <h3>🔤 اختيار الحرف</h3>
-              <p>الدور يدور على اللاعبين الحقيقيين بالترتيب (المضيف أولًا، ثم كل من انضم حسب ترتيب دخوله)، وإذا كان الدور على لاعب تجريبي (بوت) فهو يختار حرفًا عشوائيًا تلقائيًا. لا يمكن اختيار نفس الحرف مرتين بنفس اللعبة.</p>
+              <p>عند بدء كل جولة، يختار المضيف حرفًا من الأبجدية العربية (لا يمكن اختيار نفس الحرف مرتين بنفس اللعبة)، فتظهر خانات التعبئة الخمس لجميع اللاعبين في الوقت نفسه.</p>
               <h3>✍️ سير الجولة</h3>
               <ol>
                 <li>يملأ كل لاعب الخانات الخمس بكلمات تبدأ بالحرف المختار.</li>
