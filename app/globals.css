@@ -32,9 +32,10 @@
 html,body{margin:0;padding:0;}
 body{
   background:
-    linear-gradient(90deg, rgba(43,35,80,.05) 1px, transparent 1px) 0 0/22px 22px,
-    linear-gradient(0deg, rgba(43,35,80,.05) 1px, transparent 1px) 0 0/22px 22px,
-    var(--paper);
+    linear-gradient(90deg, rgba(26,23,48,.05) 1px, transparent 1px) 0 0/22px 22px,
+    linear-gradient(0deg, rgba(26,23,48,.05) 1px, transparent 1px) 0 0/22px 22px,
+    linear-gradient(160deg, #FFE7A8 0%, #FFCFE0 28%, #C9E7FF 60%, #CFF6DE 100%);
+  background-attachment: fixed;
   color:var(--ink);
   font-family:'Tajawal',sans-serif;
   min-height:100vh;
@@ -102,7 +103,7 @@ p{margin:0;}
 .wordmark .dot{width:9px;height:9px;background:var(--red); display:inline-block; border:2px solid var(--ink);}
 
 .card{
-  background:var(--paper-2);
+  background:#FFFDF6;
   border:3px solid var(--ink);
   border-radius:0;
   box-shadow:var(--shadow);
@@ -131,7 +132,7 @@ p{margin:0;}
 .btn:active{transform:translate(3px,3px); box-shadow:none;}
 .btn:disabled{opacity:.4; cursor:not-allowed; box-shadow:none; transform:none;}
 .btn-primary{background:var(--green); color:#fff;}
-.btn-outline{background:#fff; color:var(--green-deep);}
+.btn-outline{background:var(--gold); color:var(--ink);}
 .btn-ghost{background:transparent; border-color:transparent; box-shadow:none; color:var(--ink-soft); text-decoration:underline; font-weight:700; padding:10px;}
 .btn-ghost:active{transform:none;}
 .btn-red{background:var(--red); color:#fff;}
@@ -168,8 +169,10 @@ label.field-label{font-size:13.5px; font-weight:800; color:var(--ink-soft); marg
 .player-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px;}
 .player-list li{
   display:flex; align-items:center; gap:10px;
-  background:var(--paper); border:2px solid var(--ink); padding:10px 12px; font-weight:700; font-size:14.5px;
+  background:#EAF6EF; border:2px solid var(--ink); padding:10px 12px; font-weight:700; font-size:14.5px;
 }
+.player-list li:nth-child(3n+2){background:#FFF6DE;}
+.player-list li:nth-child(3n+3){background:#EAF1FF;}
 .player-avatar{
   width:30px;height:30px;
   background:linear-gradient(155deg,var(--blue),var(--blue-deep));
@@ -254,9 +257,11 @@ input[type="range"]::-webkit-slider-thumb{
 
 .result-row{
   display:flex; flex-direction:column; gap:6px; padding:12px 10px;
-  background:var(--paper); border:2px solid var(--ink);
+  background:#EAF1FF; border:2px solid var(--ink);
   margin-bottom:9px;
 }
+.result-row:nth-child(3n+2){background:#EAF6EF;}
+.result-row:nth-child(3n+3){background:#F3EAFF;}
 .result-row.win{background:var(--gold); }
 .result-row-top{display:flex; align-items:center; gap:10px;}
 .rank-num{
